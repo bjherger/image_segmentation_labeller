@@ -30,6 +30,9 @@ Key 's' - To save the results
 # Python 2/3 compatibility
 from __future__ import print_function
 
+import glob
+import logging
+
 import numpy as np
 import cv2 as cv
 
@@ -54,7 +57,7 @@ class App():
     rect_over = True       # flag to check if rect drawn
     rect_or_mask = 0      # flag for selecting rect or mask mode
     value = DRAW_FG         # drawing initialized to FG
-    thickness = 3           # brush thickness
+    thickness = 7           # brush thickness
 
     def onmouse(self, event, x, y, flags, param):
 
@@ -79,24 +82,44 @@ class App():
                 cv.circle(self.img, (x, y), self.thickness, self.value['color'], -1)
                 cv.circle(self.mask, (x, y), self.thickness, self.value['val'], -1)
 
-    def run(self):
-        # Loading images
-        if len(sys.argv) == 2:
-            filename = sys.argv[1] # for drawing purposes
-        else:
-            print("No input image given, so loading default image, lena.jpg \n")
-            print("Correct Usage: python grabcut.py <filename> \n")
-            filename = 'messi5.jpg'
+    def reset(self):
+        print("resetting \n")
 
-        # Read in file
+        logging.info(f'Reset current image index: {self.image_index}')
+
+        filename = self.image_paths[self.image_index]
         self.img = cv.imread(cv.samples.findFile(filename))
-
-        # Set region of interest rectangle to whole image
         self.rect = tuple([0, 0] + list(self.img.shape[:2]))
+        self.drawing = False
+        self.rectangle = False
+        self.rect_or_mask = 0
+        self.rect_over = True
+        self.value = self.DRAW_FG
+        self.unaltered_image = self.img.copy()
+        self.mask = np.zeros(self.img.shape[:2], dtype=np.uint8)  # mask initialized to PR_BG
+        self.output = np.zeros(self.img.shape, np.uint8)  # output image to be shown
 
-        self.img2 = self.img.copy()                               # a copy of original image
-        self.mask = np.zeros(self.img.shape[:2], dtype = np.uint8) # mask initialized to PR_BG
-        self.output = np.zeros(self.img.shape, np.uint8)           # output image to be shown
+    def save(self):
+        bar = np.zeros((self.img.shape[0], 5, 3), np.uint8)
+        res = np.hstack((self.unaltered_image, bar, self.img, self.output))
+
+        cv.imwrite('full_output.png', res)
+
+        mask = np.where((self.mask == 1) + (self.mask == 3), 255, 0).astype('uint8')
+        cv.imwrite('output.png', mask)
+        print(" Result saved as image \n")
+
+    def run(self):
+        logging.getLogger().setLevel(logging.INFO)
+
+        # Loading images
+        self.image_paths = glob.glob('data/input/images/*.png')
+        logging.info(f'Image paths: {self.image_paths}')
+
+        self.image_index = 0
+        logging.info(f'Setting first image index: {self.image_index}')
+
+        self.reset()
 
         # input and output windows
         cv.namedWindow('output')
@@ -107,7 +130,7 @@ class App():
         # Perform initial segmentation
         bgdmodel = np.zeros((1, 65), np.float64)
         fgdmodel = np.zeros((1, 65), np.float64)
-        cv.grabCut(self.img2, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_RECT)
+        cv.grabCut(self.unaltered_image, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_RECT)
         self.rect_or_mask = 1
 
         while(1):
@@ -117,28 +140,29 @@ class App():
             k = cv.waitKey(1)
 
             # key bindings
+
+            # ESC: Escape exts
             if k == 27:         # esc to exit
                 break
+
+            # 0: Background
             elif k == ord('0'): # BG drawing
                 print(" mark background regions with left mouse button \n")
                 self.value = self.DRAW_BG
+
+            # 1: Foreground
             elif k == ord('1'): # FG drawing
                 print(" mark foreground regions with left mouse button \n")
                 self.value = self.DRAW_FG
-            elif k == ord('2'): # PR_BG drawing
-                self.value = self.DRAW_PR_BG
-            elif k == ord('3'): # PR_FG drawing
-                self.value = self.DRAW_PR_FG
+
+            # Save image
             elif k == ord('s'): # save image
-                bar = np.zeros((self.img.shape[0], 5, 3), np.uint8)
-                res = np.hstack((self.img2, bar, self.img, self.output))
+                self.save()
 
-                cv.imwrite('full_output.png', res)
-
-                mask = np.where((self.mask == 1) + (self.mask == 3), 255, 0).astype('uint8')
-                cv.imwrite('output.png', mask)
-                print(" Result saved as image \n")
             elif k == ord('r'): # reset everything
+                print('Saving before resetting')
+                self.save()
+
                 print("resetting \n")
                 self.rect = (0,0,1,1)
                 self.drawing = False
@@ -146,9 +170,11 @@ class App():
                 self.rect_or_mask = 100
                 self.rect_over = False
                 self.value = self.DRAW_FG
-                self.img = self.img2.copy()
+                self.img = self.unaltered_image.copy()
                 self.mask = np.zeros(self.img.shape[:2], dtype = np.uint8) # mask initialized to PR_BG
                 self.output = np.zeros(self.img.shape, np.uint8)           # output image to be shown
+
+            # Perform one image segmentation setp
             elif k == ord('n'): # segment the image
                 print(""" For finer touchups, mark foreground and background after pressing keys 0-3
                 and again press 'n' \n""")
@@ -156,19 +182,41 @@ class App():
                     if (self.rect_or_mask == 0):         # grabcut with rect
                         bgdmodel = np.zeros((1, 65), np.float64)
                         fgdmodel = np.zeros((1, 65), np.float64)
-                        cv.grabCut(self.img2, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_RECT)
+                        cv.grabCut(self.unaltered_image, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_RECT)
                         self.rect_or_mask = 1
                     elif self.rect_or_mask == 1:         # grabcut with mask
                         bgdmodel = np.zeros((1, 65), np.float64)
                         fgdmodel = np.zeros((1, 65), np.float64)
-                        cv.grabCut(self.img2, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_MASK)
+                        cv.grabCut(self.unaltered_image, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_MASK)
                 except:
                     import traceback
                     traceback.print_exc()
 
-            mask2 = np.where((self.mask==1) + (self.mask==3), 255, 0).astype('uint8')
+            # Reset
+            elif k == ord('j'):
+                print(f'Attempting to pull up last image index')
+                if self.image_index >=1:
+                    print(f'saving image at index:{self.image_index}, and pulling up last image')
+                    self.save()
+                    self.image_index -=1
+                    self.reset()
+                else:
+                    print('Unable to pull up last image. ')
 
-            self.output = cv.bitwise_and(self.img2, self.img2, mask=mask2)
+            elif k == ord('k'):
+                print(f'Attempting to pull up next image index')
+                if self.image_index + 1 <= len(self.image_paths):
+                    print(f'saving image at index:{self.image_index}, and pulling up next image')
+                    self.save()
+                    self.image_index += 1
+                    self.reset()
+                else:
+                    print('Unable to pull up next image. ')
+                pass
+
+            # Update output image
+            mask2 = np.where((self.mask==1) + (self.mask==3), 255, 0).astype('uint8')
+            self.output = cv.bitwise_and(self.unaltered_image, self.unaltered_image, mask=mask2)
 
         print('Done')
 
