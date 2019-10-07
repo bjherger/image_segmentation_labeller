@@ -48,34 +48,15 @@ class App():
     DRAW_PR_BG = {'color' : RED, 'val' : 2}
 
     # setting up flags
-    rect = (0,0,1,1)
+    rect = (0,0,100,100)
     drawing = False         # flag for drawing curves
     rectangle = False       # flag for drawing rect
-    rect_over = False       # flag to check if rect drawn
-    rect_or_mask = 100      # flag for selecting rect or mask mode
+    rect_over = True       # flag to check if rect drawn
+    rect_or_mask = 0      # flag for selecting rect or mask mode
     value = DRAW_FG         # drawing initialized to FG
     thickness = 3           # brush thickness
 
     def onmouse(self, event, x, y, flags, param):
-        # Draw Rectangle
-        if event == cv.EVENT_RBUTTONDOWN:
-            self.rectangle = True
-            self.ix, self.iy = x,y
-
-        elif event == cv.EVENT_MOUSEMOVE:
-            if self.rectangle == True:
-                self.img = self.img2.copy()
-                cv.rectangle(self.img, (self.ix, self.iy), (x, y), self.BLUE, 2)
-                self.rect = (min(self.ix, x), min(self.iy, y), abs(self.ix - x), abs(self.iy - y))
-                self.rect_or_mask = 0
-
-        elif event == cv.EVENT_RBUTTONUP:
-            self.rectangle = False
-            self.rect_over = True
-            cv.rectangle(self.img, (self.ix, self.iy), (x, y), self.BLUE, 2)
-            self.rect = (min(self.ix, x), min(self.iy, y), abs(self.ix - x), abs(self.iy - y))
-            self.rect_or_mask = 0
-            print(" Now press the key 'n' a few times until no further change \n")
 
         # draw touchup curves
 
@@ -105,9 +86,14 @@ class App():
         else:
             print("No input image given, so loading default image, lena.jpg \n")
             print("Correct Usage: python grabcut.py <filename> \n")
-            filename = 'lena.jpg'
+            filename = 'messi5.jpg'
 
+        # Read in file
         self.img = cv.imread(cv.samples.findFile(filename))
+
+        # Set region of interest rectangle to whole image
+        self.rect = tuple([0, 0] + list(self.img.shape[:2]))
+
         self.img2 = self.img.copy()                               # a copy of original image
         self.mask = np.zeros(self.img.shape[:2], dtype = np.uint8) # mask initialized to PR_BG
         self.output = np.zeros(self.img.shape, np.uint8)           # output image to be shown
@@ -118,8 +104,11 @@ class App():
         cv.setMouseCallback('input', self.onmouse)
         cv.moveWindow('input', self.img.shape[1]+10,90)
 
-        print(" Instructions: \n")
-        print(" Draw a rectangle around the object using right mouse button \n")
+        # Perform initial segmentation
+        bgdmodel = np.zeros((1, 65), np.float64)
+        fgdmodel = np.zeros((1, 65), np.float64)
+        cv.grabCut(self.img2, self.mask, self.rect, bgdmodel, fgdmodel, 1, cv.GC_INIT_WITH_RECT)
+        self.rect_or_mask = 1
 
         while(1):
 
@@ -142,8 +131,12 @@ class App():
                 self.value = self.DRAW_PR_FG
             elif k == ord('s'): # save image
                 bar = np.zeros((self.img.shape[0], 5, 3), np.uint8)
-                res = np.hstack((self.img2, bar, self.img, bar, self.output))
-                cv.imwrite('grabcut_output.png', res)
+                res = np.hstack((self.img2, bar, self.img, self.output))
+
+                cv.imwrite('full_output.png', res)
+
+                mask = np.where((self.mask == 1) + (self.mask == 3), 255, 0).astype('uint8')
+                cv.imwrite('output.png', mask)
                 print(" Result saved as image \n")
             elif k == ord('r'): # reset everything
                 print("resetting \n")
@@ -174,6 +167,7 @@ class App():
                     traceback.print_exc()
 
             mask2 = np.where((self.mask==1) + (self.mask==3), 255, 0).astype('uint8')
+
             self.output = cv.bitwise_and(self.img2, self.img2, mask=mask2)
 
         print('Done')
