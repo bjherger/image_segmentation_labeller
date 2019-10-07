@@ -105,8 +105,8 @@ class App():
     def save(self):
 
         output_base = os.path.splitext(os.path.basename(self.image_paths[self.image_index]))[0]
-        output_full_file_path = f'data/output/{output_base}_mask.png'
-        output_mask_file_path = f'data/output/{output_base}_mask.png'
+        output_full_file_path = f'data/output/{output_base}_mask.tif'
+        output_mask_file_path = f'data/output/{output_base}_mask.tif'
 
         bar = np.zeros((self.img.shape[0], 5, 3), np.uint8)
         res = np.hstack((self.unaltered_image, bar, self.img, self.output))
@@ -120,7 +120,7 @@ class App():
         logging.getLogger().setLevel(logging.INFO)
 
         # Loading images
-        self.image_paths = glob.glob('data/input/images/*.png')
+        self.image_paths = glob.glob('data/input/images/*.tif')
         logging.info(f'Image paths: {self.image_paths}')
 
         self.image_index = 0
